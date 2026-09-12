@@ -1,5 +1,4 @@
 (async () => {
-  const MAX_PAGES = 31;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   // 1. Bandeau visuel
@@ -39,11 +38,11 @@
   const allCards = [];
   let pageIndex = 0;
 
-  setStatus('🚀 Lancement de l\'Aspirateur Synchronisé...');
+  setStatus('🚀 Lancement de l\'Aspirateur Automatique...');
 
   try {
-    // --- PHASE 1 : ASPIRATION DES ID SUR LES 31 PAGES ---
-    while (pageIndex < MAX_PAGES) {
+    // --- PHASE 1 : ASPIRATION DES ID SANS LIMITE DE PAGES ---
+    while (true) { // Boucle infinie, on l'arrêtera quand "Suivant" sera désactivé
       pageIndex++;
       const curPage = getPageText() || ('Page ' + pageIndex);
       setStatus('⚡ Extraction invisible : ' + curPage + '...');
@@ -105,18 +104,22 @@
         });
       }
 
-      // Clic Suivant
+      // --- LE TEST D'ARRÊT AUTOMATIQUE EST ICI ---
       const nextBtn = Array.from(document.querySelectorAll('button')).find(b => b.innerText && b.innerText.includes('Suivant'));
-      if (!nextBtn || nextBtn.disabled) break;
+      
+      if (!nextBtn || nextBtn.disabled) {
+          setStatus(`✅ Fin de la collection détectée (Page ${pageIndex}) !`);
+          await sleep(800);
+          break; // Casse la boucle infinie et passe à la phase 2
+      }
 
       nextBtn.click();
       setStatus(`⏳ Attente du serveur pour la page ${pageIndex + 1}...`);
 
       // 3. ATTENTE INTELLIGENTE DU RÉSEAU !
-      await sleep(100); // Laisse le clic déclencher la requête
+      await sleep(100); 
       
       let netTimeout = 0;
-      // On boucle tant que le navigateur discute avec le serveur (max 15 secondes)
       while (window.__wm_active_fetches > 0 && netTimeout < 15000) {
         await sleep(100);
         netTimeout += 100;
@@ -131,7 +134,6 @@
         textTimeout += 100;
       }
       
-      // On laisse 0.5 seconde à la page pour s'afficher correctement avant de scanner à nouveau
       await sleep(500);
     }
 
@@ -185,7 +187,7 @@
   let txt = '========================================================\n';
   txt += '       WIKIMASTERS - ESTIMATION DES COTES DE CARTES     \n';
   txt += '========================================================\n\n';
-  txt += 'Total cartes analysees : ' + allCards.length + '\n';
+  txt += 'Total cartes analysees : ' + allCards.length + ' (sur ' + pageIndex + ' pages)\n';
   txt += 'Valeur totale estimee : ' + totalValue.toLocaleString('fr-FR') + ' WikiBidous\n\n';
   txt += '--------------------------------------------------------\n';
   txt += 'DETAIL DES CARTES (DU PLUS CHER AU MOINS CHER)\n';
