@@ -4,17 +4,15 @@
   let page = 0;
   let hasMore = true;
 
-  console.log("%c[WikiMasters] 1/2 Récupération de l'inventaire via l'API...", "color: #00d2ff; font-weight: bold;");
+  console.log("%c[WikiMasters] 1/3 Récupération de l'inventaire...", "color: #00d2ff; font-weight: bold;");
 
-  // 1. Aspiration directe via l'API de collection
   while (hasMore) {
     try {
-      const res = await fetch(`/api/my-collection?sort=rarity&page=${page}&stats=0`);
+      const res = await fetch('/api/my-collection?sort=rarity&page=' + page + '&stats=0');
       if (!res.ok) break;
 
       const data = await res.json();
       const list = data.collection || [];
-
       if (list.length === 0) {
         hasMore = false;
         break;
@@ -32,19 +30,16 @@
         });
       }
 
-      console.log(`Page \({page} chargée (\){allCards.length} cartes collectées)...`);
       page++;
-      await sleep(80); // Court délai de courtoisie
+      await sleep(60);
     } catch (e) {
-      console.error(`Erreur sur la page ${page}:`, e);
       break;
     }
   }
 
-  console.log(`%c[WikiMasters] ✅ Total : ${allCards.length} cartes.`, "color: #00ff88; font-weight: bold;");
-  console.log("%c[WikiMasters] 2/2 Récupération des prix moyens sur le marché...", "color: #00d2ff; font-weight: bold;");
+  console.log("%c[WikiMasters] ✅ " + allCards.length + " cartes récupérées.", "color: #00ff88; font-weight: bold;");
+  console.log("%c[WikiMasters] 2/3 Interrogation des prix marché...", "color: #00d2ff; font-weight: bold;");
 
-  // 2. Récupération des prix moyens par lots de 25
   const batchSize = 25;
   for (let i = 0; i < allCards.length; i += batchSize) {
     const batch = allCards.slice(i, i + batchSize);
@@ -52,14 +47,16 @@
     await Promise.all(batch.map(async (card) => {
       if (!card.id) return;
       try {
-        const res = await fetch(`/api/marketplace/cards/${card.id}/sales?scope=summary`);
+        const res = await fetch('/api/marketplace/cards/' + card.id + '/sales?scope=summary');
         if (res.ok) {
           const sales = await res.json();
-          const avg = sales.averagePrice ?? sales.average ?? sales.avg ?? sales.summary?.averagePrice;
-          
+          const summary = sales.summary || {};
+          const rarityStats = summary[card.rarete] || Object.values(summary)[0];
+          const avg = rarityStats ? rarityStats.average : null;
+
           if (avg && avg > 0) {
             card.prixWB = Math.round(avg);
-            card.statut = `${card.prixWB} WB`;
+            card.statut = card.prixWB + ' WB';
           } else {
             card.statut = 'Aucune vente';
           }
@@ -71,25 +68,39 @@
       }
     }));
 
-    console.log(`Progression prix : \({Math.min(i + batchSize, allCards.length)} /\){allCards.length}`);
-    await sleep(100); // Évite de déclencher le rate limiting
+    if (i % 200 === 0 || i + batchSize >= allCards.length) {
+      console.log('Progression : ' + Math.min(i + batchSize, allCards.length) + ' / ' + allCards.length);
+    }
+    await sleep(80);
   }
 
-  // 3. Tri du plus cher au moins cher et affichage
   allCards.sort((a, b) => (b.prixWB || 0) - (a.prixWB || 0));
-
-  const totalValue = allCards.reduce((acc, c) => acc + (c.prixWB || 0) * c.exemplaires, 0);
-  console.log(`%c[WikiMasters] 💰 Valeur totale estimée : ${totalValue.toLocaleString('fr-FR')} WB`, "color: #ffaa00; font-weight: bold; font-size: 14px;");
-
-  console.table(allCards.map(c => ({
-    Rareté: c.rarete,
-    Nom: c.nom,
-    Exemplaires: c.exemplaires,
-    'Prix Moyen': c.prixWB !== null ? `${c.prixWB} WB` : c.statut,
-    ID: c.id
-  })));
-
-  // Expose le résultat directement dans la console pour manipulation libre (ex: copy(window.__CARDS__))
   window.__CARDS__ = allCards;
-  console.log("👉 Données brutes disponibles dans la variable : window.__CARDS__");
+
+  console.log("%c[WikiMasters] 3/3 Téléchargement du CSV...", "color: #00d2ff; font-weight: bold;");
+
+  const bom = '\uFEFF';
+  let csv = bom + "Rareté;Nom;Exemplaires;Prix Moyen (WB);Valeur Totale (WB);Statut;ID\n";
+
+  for (const c of allCards) {
+    const nomClean = String(c.nom || '').replace(/"/g, '""');
+    const prix = c.prixWB !== null && c.prixWB !== undefined ? c.prixWB : '';
+    const valTotale = c.prixWB !== null && c.prixWB !== undefined ? (c.prixWB * c.exemplaires) : '';
+    const statut = String(c.statut || '');
+    const id = String(c.id || '');
+
+    csv += '"' + c.rarete + '";"' + nomClean + '";' + c.exemplaires + ';' + prix + ';' + valTotale + ';"' + statut + '";"' + id + '"\n';
+  }
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'wikimasters_collection_' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  console.log("%c[WikiMasters] ✅ Téléchargement terminé !", "color: #00ff88; font-weight: bold;");
 })();
