@@ -6,7 +6,7 @@
   var page = 0;
   var totalPages = null;
 
-  // 1. Interface graphique
+  // 1. Interface graphique (allégée sans la barre de progression)
   var ui = document.createElement("div");
   ui.id = "wm-scanner-ui";
   Object.assign(ui.style, {
@@ -14,7 +14,7 @@
     top: "20px",
     right: "20px",
     zIndex: "999999",
-    width: "320px",
+    width: "300px",
     padding: "16px",
     backgroundColor: "rgba(18, 18, 24, 0.95)",
     backdropFilter: "blur(8px)",
@@ -23,36 +23,22 @@
     boxShadow: "0 10px 25px rgba(0, 0, 0, 0.5)",
     fontFamily: "system-ui, -apple-system, sans-serif",
     color: "#f8fafc",
-    fontSize: "13px"
-  });
-
-  var header = document.createElement("div");
-  Object.assign(header.style, {
+    fontSize: "13px",
     display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "8px"
+    flexDirection: "column",
+    gap: "8px"
   });
 
-  var title = document.createElement("span");
+  var title = document.createElement("div");
   title.style.fontWeight = "700";
   title.style.color = "#00d2ff";
   title.textContent = "Scan Collection Complète";
-
-  var percentLabel = document.createElement("span");
-  percentLabel.style.fontWeight = "700";
-  percentLabel.style.color = "#38bdf8";
-  percentLabel.textContent = "0%";
-
-  header.appendChild(title);
-  header.appendChild(percentLabel);
-  ui.appendChild(header);
+  ui.appendChild(title);
 
   var statusLabel = document.createElement("div");
   Object.assign(statusLabel.style, {
-    fontSize: "11px",
-    color: "#94a3b8",
-    marginBottom: "8px",
+    fontSize: "12px",
+    color: "#e2e8f0",
     whiteSpace: "nowrap",
     overflow: "hidden",
     textOverflow: "ellipsis"
@@ -60,31 +46,10 @@
   statusLabel.textContent = "Initialisation...";
   ui.appendChild(statusLabel);
 
-  var track = document.createElement("div");
-  Object.assign(track.style, {
-    width: "100%",
-    height: "8px",
-    backgroundColor: "#334155",
-    borderRadius: "4px",
-    overflow: "hidden"
-  });
-
-  var bar = document.createElement("div");
-  Object.assign(bar.style, {
-    width: "0%",
-    height: "100%",
-    background: "linear-gradient(90deg, #00d2ff, #00ff88)",
-    transition: "width 0.2s ease"
-  });
-
-  track.appendChild(bar);
-  ui.appendChild(track);
   document.body.appendChild(ui);
 
-  var updateProgress = async function(percent, statusText) {
-    var clamped = Math.min(100, Math.max(0, Math.round(percent)));
-    bar.style.width = clamped + "%";
-    percentLabel.textContent = clamped + "%";
+  // Nouvelle fonction pour mettre à jour uniquement le texte
+  var updateStatus = async function(statusText) {
     statusLabel.textContent = statusText;
     await new Promise(requestAnimationFrame);
   };
@@ -97,8 +62,8 @@
     }, delay || 4000);
   };
 
-  // 2. Récupération de l'inventaire complet (0% à 30%)
-  await updateProgress(2, "Lecture de l'inventaire...");
+  // 2. Récupération de l'inventaire complet
+  await updateStatus("Lecture de l'inventaire...");
 
   while (true) {
     try {
@@ -117,10 +82,15 @@
       for (var i = 0; i < list.length; i++) {
         var item = list[i];
         var card = item.card || {};
+        
+        // Détection du tag
+        var hasTag = (item.tag || (item.tags && item.tags.length > 0) || card.tag || (card.tags && card.tags.length > 0)) ? "Oui" : "Non";
+
         allCards.push({
           id: card.id || item.card_id,
           nom: card.wikipedia_title || "Sans titre",
           rarete: card.rarity || "NC",
+          tag: hasTag,
           exemplaires: item.count || 1,
           prixWB: null,
           statut: "En attente"
@@ -128,8 +98,7 @@
       }
 
       page++;
-      var scanPercent = totalPages ? Math.round((page / totalPages) * 30) : Math.min(28, page * 2);
-      await updateProgress(scanPercent, "Inventaire : page " + page + (totalPages ? "/" + totalPages : "") + " (" + allCards.length + " cartes)");
+      await updateStatus("Inventaire : page " + page + (totalPages ? " / " + totalPages : "") + " (" + allCards.length + " cartes)");
 
       if (totalPages && page >= totalPages) break;
       await sleep(40);
@@ -140,13 +109,13 @@
   }
 
   if (allCards.length === 0) {
-    await updateProgress(100, "Aucune carte trouvée.");
+    await updateStatus("Aucune carte trouvée.");
     console.log("%c[WikiMasters] Aucune carte trouvée.", "color: #ff5722; font-weight: bold;");
     closeUI(3000);
     return;
   }
 
-  // 3. Récupération des prix moyens du marché (30% à 95%)
+  // 3. Récupération des prix moyens du marché
   var batchSize = 25;
   var total = allCards.length;
 
@@ -180,8 +149,7 @@
     );
 
     var processed = Math.min(j + batchSize, total);
-    var progress = 30 + Math.round((processed / total) * 65);
-    await updateProgress(progress, "Prix marché : " + processed + " / " + total);
+    await updateStatus("Scan des prix marché : " + processed + " / " + total + " cartes");
     await sleep(60);
   }
 
@@ -191,11 +159,11 @@
   });
   window.__CARDS__ = allCards;
 
-  // 5. Génération et téléchargement du CSV (95% à 100%)
-  await updateProgress(98, "Génération du fichier CSV...");
+  // 5. Génération et téléchargement du CSV
+  await updateStatus("Génération du fichier CSV...");
 
   var lines = [];
-  lines.push(["Rareté", "Nom", "Exemplaires", "Prix Moyen (WB)", "Valeur Totale (WB)", "Statut", "ID"]);
+  lines.push(["Rareté", "Nom", "Tag", "Exemplaires", "Prix Moyen (WB)", "Valeur Totale (WB)", "Statut", "ID"]);
 
   for (var k = 0; k < allCards.length; k++) {
     var c = allCards[k];
@@ -203,6 +171,7 @@
     lines.push([
       c.rarete,
       c.nom,
+      c.tag,
       c.exemplaires,
       c.prixWB !== null && c.prixWB !== undefined ? c.prixWB : "",
       valTotale,
@@ -227,7 +196,7 @@
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 
-  await updateProgress(100, "Téléchargement terminé !");
+  await updateStatus("Téléchargement terminé !");
   console.log("%c[WikiMasters] ✅ " + allCards.length + " cartes exportées avec succès dans le fichier CSV.", "color: #00ff88; font-weight: bold;");
   closeUI(5000);
 })();
